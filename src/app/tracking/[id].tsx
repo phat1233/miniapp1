@@ -6,7 +6,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import { ActivityIndicator, Card, IconButton, Text } from 'react-native-paper';
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = 'http://192.168.1.10:3000'; // ⚠️ Thay bằng IPv4 của bạn
+const SOCKET_URL = 'http://172.20.10.1:3000'; // ⚠️ Thay bằng IPv4 của bạn
 
 let socket: Socket;
 

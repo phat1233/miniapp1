@@ -6,7 +6,7 @@ import { ActivityIndicator, Badge, Button, Card, FAB, Text } from 'react-native-
 import { Product, useCart } from '../context/CartContext';
 
 // ⚠️ Thay bằng IPv4 của máy tính bạn
-const BASE_URL = 'http://192.168.1.122:3000/api'; 
+const BASE_URL = 'http:/172.20.10.2:3000/api'; 
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -40,10 +40,18 @@ export default function HomeScreen() {
     loadData();
   }, []);
 
-  const handleLogout = async () => {
-    await AsyncStorage.clear();
+const handleLogout = async () => {
+  try {
+    // 1. Xóa thông tin đăng nhập trong máy
+    await AsyncStorage.removeItem('userInfo');
+    
+    // 2. Xóa sạch toàn bộ lịch sử stack và chuyển hướng về trang đăng nhập
+    router.dismissAll();
     router.replace('/login');
-  };
+  } catch (error) {
+    console.error('Lỗi khi đăng xuất:', error);
+  }
+};
 
   if (loading) {
     return (

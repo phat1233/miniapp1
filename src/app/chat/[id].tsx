@@ -5,7 +5,7 @@ import { IconButton, Text, TextInput } from 'react-native-paper';
 import { io, Socket } from 'socket.io-client';
 
 // ⚠️ Thay bằng IPv4 máy tính của bạn (Ví dụ: http://192.168.1.10:3000)
-const SOCKET_URL = 'http://192.168.1.122:3000';
+const SOCKET_URL = 'http://172.20.10.2:3000';
 
 let socket: Socket;
 

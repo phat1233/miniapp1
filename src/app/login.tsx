@@ -5,7 +5,7 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Card, Text, TextInput } from 'react-native-paper';
 
 // ⚠️ Thay bằng IPv4 của máy bạn (ví dụ: http://192.168.1.15:3000/api)
-const BASE_URL = 'http://192.168.1.122:3000/api'; 
+const BASE_URL = 'http://172.20.10.2:3000/api'; 
 
 export default function LoginScreen() {
   const router = useRouter();

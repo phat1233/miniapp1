@@ -1,22 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, FlatList, Image, StyleSheet, View } from 'react-native';
-import { Button, Card, Divider, IconButton, Text } from 'react-native-paper';
+import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Button, Card, Divider, IconButton, Text, TextInput } from 'react-native-paper';
 import { useCart } from '../context/CartContext';
 
 // ⚠️ Thay bằng IPv4 máy tính của bạn
-const BASE_URL = 'http://192.168.1.122:3000/api'; 
+const BASE_URL = 'http://172.20.10.2:3000/api';
 
-export default function CartScreen() {
+export default function CartCheckoutScreen() {
   const router = useRouter();
   const { cart, updateQuantity, removeFromCart, totalPrice, clearCart } = useCart();
-  const [loading, setLoading] = useState(false);
+  
+  const [address, setAddress] = useState<string>('');
+  const [note, setNote] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
 
-  // 🚀 Hàm gửi đơn hàng lên Server Node.js
-  const handleCheckout = async () => {
+  // 🚀 Gửi đơn hàng trực tiếp lên Server
+  const handleConfirmOrder = async () => {
     try {
-      setLoading(true);
       const userInfoStr = await AsyncStorage.getItem('userInfo');
       const userInfo = userInfoStr ? JSON.parse(userInfoStr) : null;
 
@@ -26,113 +28,212 @@ export default function CartScreen() {
         return;
       }
 
-      // Gọi API POST /api/orders
+      if (!cart || cart.length === 0) {
+        Alert.alert('Giỏ hàng trống', 'Vui lòng chọn món trước khi đặt hàng!');
+        return;
+      }
+
+      if (!address.trim()) {
+        Alert.alert('Thiếu thông tin', 'Vui lòng nhập địa chỉ giao hàng!');
+        return;
+      }
+
+      setLoading(true);
+
+      // Chuẩn hóa dữ liệu sản phẩm gửi lên server bất kể cấu trúc gốc ra sao
+      const formattedItems = cart.map((item: any) => {
+        const prod = item.product || item;
+        return {
+          productId: prod.id || prod._id || '',
+          name: prod.name || 'Sản phẩm',
+          price: Number(prod.price || 0),
+          image: prod.image || '',
+          quantity: Number(item.quantity || 1)
+        };
+      });
+
+      const orderData = {
+        userId: userInfo.id,
+        userName: userInfo.name || 'Khách hàng',
+        address: address,
+        note: note,
+        items: formattedItems,
+        totalPrice: totalPrice
+      };
+
       const response = await fetch(`${BASE_URL}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: userInfo.id,
-          userName: userInfo.name,
-          items: cart,
-          totalPrice: totalPrice,
-        }),
+        body: JSON.stringify(orderData)
       });
 
       const data = await response.json();
 
-      if (response.ok) {
-        Alert.alert('🎉 Thành công', `Đơn hàng #${data.order.id} đã được gửi tới quán!`);
-        clearCart(); // Xóa sạch giỏ hàng sau khi đặt thành công
-        router.back();
+      if (response.ok && data.success) {
+        Alert.alert(
+          '🎉 Đặt hàng thành công!',
+          `Mã đơn hàng: #${data.order.orderId || data.order.id}\nQuán đã nhận được đơn và đang chuẩn bị!`,
+          [
+            { 
+              text: 'Xem lịch sử đơn hàng', 
+              onPress: () => {
+                clearCart(); // Xóa giỏ hàng trên app
+                router.replace('/orders'); // Sang trang lịch sử
+              } 
+            }
+          ]
+        );
       } else {
-        Alert.alert('Lỗi', data.message || 'Không thể tạo đơn hàng!');
+        Alert.alert('Lỗi', data.error || 'Không thể tạo đơn hàng!');
       }
     } catch (error) {
-      Alert.alert('Lỗi kết nối', 'Không thể kết nối tới Server!');
+      console.error('Lỗi đặt hàng:', error);
+      Alert.alert('Lỗi kết nối', 'Không thể kết nối tới server.');
     } finally {
       setLoading(false);
     }
   };
+  // Thay vì tạo đơn luôn, ta chuyển hướng sang trang chọn Phương thức thanh toán & Mã giảm giá
+  const handleGoToPaymentOptions = () => {
+    if (!cart || cart.length === 0) {
+      Alert.alert('Giỏ hàng trống', 'Vui lòng chọn món trước khi thanh toán!');
+      return;
+    }
+
+    if (!address.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập địa chỉ giao hàng!');
+      return;
+    }
+
+    // Chuyển sang màn hình chọn phương thức thanh toán và mã giảm giá
+    router.push({
+      pathname: '/payment-method', // Hoặc tên file trang phương thức thanh toán của bạn
+      params: {
+        address: address,
+        note: note,
+        totalAmount: totalPrice.toString()
+      }
+    });
+  };
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <IconButton icon="arrow-left" onPress={() => router.back()} />
         <Text variant="titleLarge" style={{ fontWeight: 'bold' }}>
-          Giỏ hàng của bạn ({cart.length})
+          Xác Nhận Đơn Hàng ({cart?.length || 0} món)
         </Text>
       </View>
 
-      {cart.length === 0 ? (
+      {!cart || cart.length === 0 ? (
         <View style={styles.emptyBox}>
-          <Text variant="bodyLarge">Giỏ hàng đang trống!</Text>
+          <Text variant="bodyLarge">Giỏ hàng của bạn đang trống!</Text>
           <Button mode="contained" onPress={() => router.back()} style={{ marginTop: 16 }}>
-            Mua sắm ngay
+            Tiếp tục chọn món từ Menu
           </Button>
         </View>
       ) : (
-        <>
-          <FlatList
-            data={cart}
-            keyExtractor={(item) => item.product.id}
-            contentContainerStyle={{ padding: 16 }}
-            renderItem={({ item }) => (
-              <Card style={styles.cartCard} mode="outlined">
-                <Card.Content style={styles.cartRow}>
-                  <Image source={{ uri: item.product.image }} style={styles.itemImage} />
-                  
-                  <View style={styles.itemInfo}>
-                    <Text variant="titleMedium">{item.product.name}</Text>
-                    <Text variant="bodyMedium" style={styles.itemPrice}>
-                      {(item.product.price * item.quantity).toLocaleString('vi-VN')} đ
-                    </Text>
-
-                    <View style={styles.qtyRow}>
-                      <IconButton
-                        icon="minus-box"
-                        size={20}
-                        onPress={() => updateQuantity(item.product.id, -1)}
-                      />
-                      <Text variant="titleMedium">{item.quantity}</Text>
-                      <IconButton
-                        icon="plus-box"
-                        size={20}
-                        onPress={() => updateQuantity(item.product.id, 1)}
-                      />
-                    </View>
-                  </View>
-
-                  <IconButton
-                    icon="trash-can-outline"
-                    iconColor="#B00020"
-                    onPress={() => removeFromCart(item.product.id)}
-                  />
-                </Card.Content>
-              </Card>
-            )}
-          />
-
-          <Card style={styles.footerCard}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+          {/* Danh sách món ăn */}
+          <Card style={styles.card} mode="outlined">
             <Card.Content>
-              <View style={styles.totalRow}>
-                <Text variant="titleMedium">Tổng thanh toán:</Text>
+              <View style={styles.rowBetweenHeader}>
+                <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#6200ee' }}>
+                  📦 Món đã chọn
+                </Text>
+                <Button mode="text" compact onPress={() => router.back()}>
+                  + Chọn thêm món
+                </Button>
+              </View>
+
+              {cart.map((item: any, index: number) => {
+                // Xử lý linh hoạt lấy thông tin sản phẩm (dù nằm trong .product hay nằm trực tiếp ngoài item)
+                const product = item.product || item;
+                const productId = product.id || product._id || index.toString();
+                const name = product.name || 'Sản phẩm';
+                const price = Number(product.price || 0);
+                const image = product.image || 'https://via.placeholder.com/150';
+                const quantity = Number(item.quantity || 1);
+
+                return (
+                  <View key={productId} style={styles.cartRow}>
+                    <Image source={{ uri: image }} style={styles.itemImage} />
+                    <View style={styles.itemInfo}>
+                      <Text variant="titleMedium" numberOfLines={1}>{name}</Text>
+                      <Text style={styles.itemPrice}>
+                        {(price * quantity).toLocaleString('vi-VN')} đ
+                      </Text>
+                      
+                      <View style={styles.qtyRow}>
+                        <IconButton icon="minus-box" size={18} onPress={() => updateQuantity(productId, -1)} />
+                        <Text variant="bodyMedium">{quantity}</Text>
+                        <IconButton icon="plus-box" size={18} onPress={() => updateQuantity(productId, 1)} />
+                      </View>
+                    </View>
+
+                    <IconButton
+                      icon="trash-can-outline"
+                      iconColor="#B00020"
+                      size={20}
+                      onPress={() => removeFromCart(productId)}
+                    />
+                  </View>
+                );
+              })}
+
+              <Divider style={{ marginVertical: 12 }} />
+              
+              <View style={styles.rowBetween}>
+                <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>Tổng thanh toán:</Text>
                 <Text variant="headlineSmall" style={styles.totalText}>
                   {totalPrice.toLocaleString('vi-VN')} đ
                 </Text>
               </View>
-              <Divider style={{ marginVertical: 12 }} />
-              <Button
-                mode="contained"
-                buttonColor="#6200ee"
-                onPress={handleCheckout}
-                loading={loading}
-                disabled={loading}
-              >
-                Đặt hàng ngay
-              </Button>
             </Card.Content>
           </Card>
-        </>
+
+          {/* Phần nhập địa chỉ giao hàng */}
+          <Card style={[styles.card, { marginTop: 12 }]} mode="outlined">
+            <Card.Content>
+              <Text variant="titleMedium" style={{ fontWeight: 'bold', marginBottom: 12, color: '#6200ee' }}>
+                📍 Thông tin giao hàng
+              </Text>
+              
+              <TextInput
+                label="Nhập địa chỉ giao hàng chi tiết..."
+                mode="outlined"
+                value={address}
+                onChangeText={setAddress}
+                style={{ marginBottom: 12, backgroundColor: '#fff' }}
+                outlineColor="#ccc"
+                activeOutlineColor="#6200ee"
+              />
+
+              <TextInput
+                label="Ghi chú cho tài xế / cửa hàng (Tùy chọn)"
+                mode="outlined"
+                value={note}
+                onChangeText={setNote}
+                multiline
+                numberOfLines={2}
+                style={{ backgroundColor: '#fff' }}
+                outlineColor="#ccc"
+                activeOutlineColor="#6200ee"
+              />
+            </Card.Content>
+          </Card>
+
+          {/* Nút đặt hàng */}
+        <Button 
+    mode="contained" 
+    buttonColor="#6200ee" 
+    style={{ marginTop: 24, paddingVertical: 6, borderRadius: 8 }}
+    onPress={handleGoToPaymentOptions}
+  >
+    Tiếp Tục Chọn Thanh Toán & Mã Giảm Giá ({totalPrice.toLocaleString('vi-VN')} đ)
+  </Button>
+        </ScrollView>
       )}
     </View>
   );
@@ -140,15 +241,15 @@ export default function CartScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f6f6f6', paddingTop: 40 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, backgroundColor: '#fff', elevation: 2 },
   emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  cartCard: { marginBottom: 12, backgroundColor: '#fff' },
-  cartRow: { flexDirection: 'row', alignItems: 'center' },
-  itemImage: { width: 70, height: 70, borderRadius: 8 },
-  itemInfo: { flex: 1, marginLeft: 12 },
-  itemPrice: { color: '#6200ee', fontWeight: 'bold', marginVertical: 4 },
-  qtyRow: { flexDirection: 'row', alignItems: 'center' },
-  footerCard: { borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: '#fff' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  card: { backgroundColor: '#fff', borderRadius: 12 },
+  rowBetweenHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cartRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 6, borderBottomWidth: 0.5, borderBottomColor: '#eee', paddingBottom: 8 },
+  itemImage: { width: 60, height: 60, borderRadius: 8 },
+  itemInfo: { flex: 1, marginLeft: 10 },
+  itemPrice: { color: '#6200ee', fontWeight: 'bold', fontSize: 13 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalText: { color: '#6200ee', fontWeight: 'bold' },
 });
